@@ -1,0 +1,9 @@
+# Large data inputs / generated outputs — do NOT commit (GitHub 100MB limit)
+data/
+*_predictions.csv
+*.csv
+
+# MATLAB / OS artifacts
+*.asv
+*.mat
+.DS_Store

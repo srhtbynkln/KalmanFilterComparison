@@ -20,14 +20,14 @@ ref_lat = dataStruct.gps.lat(1);
 ref_lon = dataStruct.gps.lon(1);
 ref_alt = dataStruct.gps.h(1);
 ref_yaw = dataStruct.gps.heading(1);
-%%
+%% klasik kalman filtreleri
 KF_out = KF(dataStruct);
 
 SH_out = SageHusaKF(dataStruct);
 
 STF_out = STF(dataStruct);
 
-%%
+%% extended NonLinear kalman filtresi
 EKF_out = EKF(dataStruct);
 
 EKF_sage_out = EKF_sagehusa(dataStruct);
