@@ -1,0 +1,7 @@
+# Zip'ten cikarilan buyuk veri klasorleri (data.zip / data_marmaray.zip izlenir)
+data/
+data_marmaray/
+
+# Python
+__pycache__/
+*.pyc

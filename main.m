@@ -1,102 +1,108 @@
-%%
+%% ===================================================================
+%  KalmanFilterComparison - ANA SCRIPT
+%  GNSS/IMU fuzyonu ile konum & hiz kestirimi (tren + telefon veri setleri)
+% ===================================================================
 clear; clc; close all;
-%%
+
 try
     scriptPath = fileparts(mfilename('fullpath'));
-    if ~isempty(scriptPath)
-        cd(scriptPath);
-    end
+    if ~isempty(scriptPath), cd(scriptPath); end
 catch
-    disp('Warning');
+    disp('Uyari: dizin ayarlanamadi');
 end
-
 addpath(genpath(pwd));
-if ~exist('outputs', 'dir'), mkdir('outputs'); end
 if ~exist('Plot', 'dir'), mkdir('Plot'); end
 
-[dataStruct, T0] = loadAndSyncSensors('data/');
+%% --- VERI SETI SECIMI ---
+% Telefon (Marmaray):  'data_marmaray/'
+% Tren  (Modena RTK):  'data/'
+dataDir = 'data_marmaray/';
+fprintf('Veri dizini: %s\n', dataDir);
 
-ref_lat = dataStruct.gps.lat(1);
-ref_lon = dataStruct.gps.lon(1);
-ref_alt = dataStruct.gps.h(1);
-ref_yaw = dataStruct.gps.heading(1);
-%%
-KF_out = KF(dataStruct);
+[dataStruct, T0] = loadAndSyncSensors(dataDir);
+fprintf('IMU ornek: %d (%.0f Hz),  GPS ornek: %d (%.2f Hz),  Sure: %.0f s\n', ...
+    numel(dataStruct.time), 1/dataStruct.dt, numel(dataStruct.gps.time), ...
+    1/mean(diff(dataStruct.gps.time)), dataStruct.time(end)-dataStruct.time(1));
 
-SH_out = SageHusaKF(dataStruct);
+%% --- FILTRELERI CALISTIR ---
+KF_out        = KF(dataStruct);
+SH_out        = SageHusaKF(dataStruct);
+STF_out       = STF(dataStruct);
+EKF_out       = EKF(dataStruct);
+EKF_sage_out  = EKF_sagehusa(dataStruct);
+EKF_stf_out   = EKF_strong_tracking(dataStruct);   % outlier-gate'li (artik dahil)
+imu_out       = imuLoc(dataStruct);                % saf DR (drift gosterir)
+fusion_out    = fusionEKF(dataStruct);             % ANA COZUM: GPS pos+HIZ fuzyonu
 
-STF_out = STF(dataStruct);
+%% --- DOGRULUK METRIKLERI ---
+results = {KF_out, SH_out, STF_out, EKF_out, EKF_sage_out, EKF_stf_out, imu_out, fusion_out};
+names   = {'KF','SageHusaKF','STF','EKF','EKF-SageHusa','EKF-StrongTrack','imuLoc(DR)','fusionEKF'};
+metrics = computeMetrics(dataStruct, results, names);
+writetable(metrics, 'metrics.csv');
 
-%%
-EKF_out = EKF(dataStruct);
+%% --- TAHMIN CSV'leri ---
+writetable(table(fusion_out.lat, fusion_out.lon, fusion_out.v, ...
+    'VariableNames', {'Lat','Lon','Speed_ms'}), 'fusion_predictions.csv');
+writetable(table(imu_out.lat, imu_out.lon, imu_out.v, ...
+    'VariableNames', {'Lat','Lon','Speed_ms'}), 'imu_predictions.csv');
 
-EKF_sage_out = EKF_sagehusa(dataStruct);
+%% --- ODAK GRAFIK: fusion vs DR vs GPS (konum + hiz) ---
+plotFusionVsDR(dataStruct, fusion_out, imu_out, 'Plot/');
 
-%%
-
-imu_out = imuLoc(dataStruct);
-%%
-plotResultsKF(dataStruct, KF_out, 'Plot/');
-
-plotResultsSageHusa(dataStruct, SH_out, 'Plot/');
-
-plotResultsSTF(dataStruct, STF_out, 'Plot/');
-
-%%
-plotResultsimu(dataStruct, imu_out, 'Plot/');
-%%
-kf_table = table(KF_out.lat, KF_out.lon, 'VariableNames', {'Lat', 'Lon'});
-writetable(kf_table, 'kf_predictions.csv');
-
-sh_table = table(SH_out.lat, SH_out.lon, 'VariableNames', {'Lat', 'Lon'});
-writetable(sh_table, 'sh_predictions.csv');
-
-stf_table = table(STF_out.lat, STF_out.lon, 'VariableNames', {'Lat', 'Lon'});
-writetable(stf_table, 'stf_predictions.csv');
-
-ekf_table = table(EKF_out.lat, EKF_out.lon, 'VariableNames', {'Lat', 'Lon'});
-writetable(ekf_table, 'ekf_predictions.csv');
-
-ekfsh_table = table(EKF_sage_out.lat, EKF_sage_out.lon, 'VariableNames', {'Lat', 'Lon'});
-writetable(ekfsh_table, 'ekfsh_predictions.csv');
-
-%%
-imush_table = table(imu_out.lat, imu_out.lon, 'VariableNames', {'Lat', 'Lon'});
-writetable(imush_table, 'imush_predictions.csv');
-%%
-plotResultsEKF(dataStruct, EKF_out, 'Plot/');
-
-plotResultsEKF_sagehusa(dataStruct, EKF_sage_out, 'Plot/');
-
-%%
-plotResultsAll(dataStruct,KF_out,SH_out,STF_out ,EKF_out,EKF_sage_out, 'Plot/');
-%%
-functions = {@KF, @SageHusaKF, @STF, @EKF, @EKF_sagehusa};
-names = {'Standard KF', 'Sage-Husa KF', 'Strong Tracking Filter', 'EKF', 'EKF-SageHusa'};
-num_runs = 20; 
-results = zeros(length(functions), 1);
-N = length(dataStruct.time);
-
-fprintf('=== Deney Başlatıldı ===\n');
-total_tic = tic; % Toplam süre için
-
-for i = 1:length(functions)
-    fprintf('[%d/%d] %-25s çalışıyor... ', i, length(functions), names{i});
-    
-    iter_tic = tic;
-    for r = 1:num_runs
-        feval(functions{i}, dataStruct);
-        disp(r);
-    end
-    results(i) = toc(iter_tic) / num_runs;
-    
-    fprintf('Bitti! (Ortalama: %.4f sn)\n', results(i));
+%% --- (opsiyonel) mevcut tekil grafikler ---
+try
+    plotResultsKF(dataStruct, KF_out, 'Plot/');
+    plotResultsSTF(dataStruct, STF_out, 'Plot/');
+    plotResultsEKF(dataStruct, EKF_out, 'Plot/');
+    plotResultsimu(dataStruct, imu_out, 'Plot/');
+catch ME
+    fprintf('Grafik uyarisi (Mapping Toolbox gerekebilir): %s\n', ME.message);
 end
 
-total_duration = toc(total_tic);
-fprintf('=== Tüm Deney Tamamlandı! Toplam Süre: %.2f sn ===\n\n', total_duration);
+fprintf('\nBitti. Sonuc: metrics.csv ve Plot/ klasoru.\n');
+fprintf('Ana cikti: fusionEKF -> konum + HIZ (bkz. REHBER.md)\n');
 
-% Tablo oluşturma
-Step_Time_ms = (results ./ N) * 1000; 
-T = table(names', results, Step_Time_ms, 'VariableNames', {'Algorithm', 'Avg_Total_Time_s', 'Avg_Step_Time_ms'});
-disp(T);
+%% ===================================================================
+function plotFusionVsDR(ds, fus, imu, outDir)
+    if ~exist(outDir,'dir'), mkdir(outDir); end
+    Re = 6378137; d2r = pi/180;
+    lat0 = ds.gps.lat(1); lon0 = ds.gps.lon(1);
+    gN = (ds.gps.lat-lat0)*d2r*Re;
+    gE = (ds.gps.lon-lon0)*d2r*Re*cos(lat0*d2r);
+
+    f = figure('Visible','on','Position',[80 80 1300 850]);
+
+    % 1) Yorunge (NED)
+    subplot(2,2,1); hold on; grid on; axis equal;
+    plot(gE, gN, 'k.', 'DisplayName','GPS');
+    plot(fus.e, fus.n, 'b-', 'LineWidth',1.3, 'DisplayName','fusionEKF');
+    plot(imu.e, imu.n, 'r-', 'LineWidth',1.0, 'DisplayName','imuLoc (saf DR)');
+    xlabel('Dogu (m)'); ylabel('Kuzey (m)'); title('Yorunge'); legend('Location','best');
+
+    % 2) HIZ karsilastirmasi
+    subplot(2,2,2); hold on; grid on;
+    if isfield(ds.gps,'speed')
+        plot(ds.gps.time, ds.gps.speed, 'k.', 'DisplayName','GPS speed');
+    end
+    plot(fus.time, fus.v, 'b-', 'LineWidth',1.2, 'DisplayName','fusionEKF');
+    plot(imu.time, imu.v, 'r-', 'LineWidth',0.8, 'DisplayName','imuLoc (DR)');
+    xlabel('Zaman (s)'); ylabel('Hiz (m/s)'); title('HIZ'); legend('Location','best');
+
+    % 3) Konum hatasi (GPS'e gore)
+    subplot(2,2,3); hold on; grid on;
+    fn = interp1(fus.time, fus.n, ds.gps.time); fe = interp1(fus.time, fus.e, ds.gps.time);
+    inx= interp1(imu.time, imu.n, ds.gps.time); iex= interp1(imu.time, imu.e, ds.gps.time);
+    plot(ds.gps.time, sqrt((fn-gN).^2+(fe-gE).^2), 'b-', 'DisplayName','fusionEKF');
+    plot(ds.gps.time, sqrt((inx-gN).^2+(iex-gE).^2), 'r-', 'DisplayName','imuLoc (DR)');
+    xlabel('Zaman (s)'); ylabel('Konum hatasi (m)'); title('GPS''e gore konum hatasi');
+    legend('Location','best');
+
+    % 4) Kestirilen ivme bias'i (fusion)
+    subplot(2,2,4); hold on; grid on;
+    plot(fus.time, fus.bax, 'DisplayName','b_{ax}');
+    plot(fus.time, fus.bay, 'DisplayName','b_{ay}');
+    xlabel('Zaman (s)'); ylabel('Bias (m/s^2)'); title('fusionEKF - kestirilen ivme bias''i');
+    legend('Location','best');
+
+    saveas(f, fullfile(outDir,'fusion_vs_dr.png'));
+end

@@ -41,8 +41,8 @@ function sh_out = SageHusaKF(ds)
     gps_idx = 1;
     num_gps = length(ds.gps.time);
     
+    % NOT: ivme zaten m/s^2; g->m/s^2 olceklemesi YAPILMAZ.
     scale_acc = 1.0; scale_gyro = 1.0;
-    if mean(abs(ds.az)) < 2.0, scale_acc = 9.80665; end
     if mean(abs(ds.gz)) > 10, scale_gyro = pi/180; end
 
     for k = 1:N
