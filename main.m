@@ -99,8 +99,8 @@ function plotFusionVsDR(ds, fus, imu, outDir)
 
     % 4) Kestirilen ivme bias'i (fusion)
     subplot(2,2,4); hold on; grid on;
-    plot(fus.time, fus.bax, 'DisplayName','b_{ax}');
-    plot(fus.time, fus.bay, 'DisplayName','b_{ay}');
+    plot(fus.time, fus.bN, 'DisplayName','b_{N}');
+    plot(fus.time, fus.bE, 'DisplayName','b_{E}');
     xlabel('Zaman (s)'); ylabel('Bias (m/s^2)'); title('fusionEKF - kestirilen ivme bias''i');
     legend('Location','best');
 
