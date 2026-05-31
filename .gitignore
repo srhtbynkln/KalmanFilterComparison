@@ -5,3 +5,15 @@ data_marmaray/
 # Python
 __pycache__/
 *.pyc
+
+# === Guvenlik & cikti (eklendi) ===
+client_secret_*.json
+*.apps.googleusercontent.com.json
+Logs/
+fusion_predictions.csv
+imu_predictions.csv
+*_predictions.csv
+# Drive senkron cift kopyalari
+*\ 2/
+*\ 2.*
+* [0-9].csv

@@ -55,28 +55,51 @@ def ekf_update(x,P,z,H,R,gate):
     P=0.5*(P+P.T)
     return x,P
 
+HAS_ORIENT = False  # marmaray verisinde Orientation yok -> yaw fallback
+
 def fusionEKF():
-    x=np.zeros(6); x[0]=gN[0]; x[1]=gE[0]
-    if not math.isnan(vN_g[0]): x[2]=vN_g[0]; x[3]=vE_g[0]
+    # Baslatmayi ILK GUVENILIR (hAcc<50) fix'e ertele: cold-start/tunel cikis
+    # coplerinde kucuk P ile yanlis konuma "emin" baslamayi onler.
+    gi = [i for i in range(ngps) if 0 < hacc[i] < 50 and not math.isnan(gN[i])]
+    first_good = gi[0] if gi else 0
+    init_time = tg[first_good]
+    x=np.zeros(6); x[0]=gN[first_good]; x[1]=gE[first_good]
+    if not math.isnan(vN_g[first_good]): x[2]=vN_g[first_good]; x[3]=vE_g[first_good]
     P=np.diag([25.,25,4,4,0.25,0.25])
     psi=init_heading()
+    initialized=False; last_gps_t=-1e18
     sigma_a=0.5; sigma_bias=0.002; Kpsi=0.02; v_zupt=0.4; a_zupt=0.3
+    outage_T=1.5
     gps_idx=0
     out_n=np.zeros(N); out_v=np.zeros(N); out_e=np.zeros(N)
-    out_bax=np.zeros(N); out_bay=np.zeros(N)
+    out_bN=np.zeros(N); out_bE=np.zeros(N)
     Hc=np.array([[1,0,0,0,0,0],[0,1,0,0,0,0.]])
     Hv=np.array([[0,0,1,0,0,0],[0,0,0,1,0,0.]])
     for k in range(N):
-        d=dt_k[k]; c=math.cos(psi); s=math.sin(psi)
+        d=dt_k[k]
+        if not initialized:
+            if t[k] < init_time:
+                out_n[k]=x[0]; out_e[k]=x[1]; out_v[k]=0
+                out_bN[k]=x[4]; out_bE[k]=x[5]
+                while gps_idx<ngps and tg[gps_idx]<=t[k]+1e-9: gps_idx+=1
+                continue
+            initialized=True; last_gps_t=init_time
+        outage = (t[k]-last_gps_t) > outage_T
+        c=math.cos(psi); s=math.sin(psi)
         psi += gz[k]*d
+        # nav-cerceve ivme (Orientation varsa tam rotasyon, yoksa yaw)
+        if HAS_ORIENT:
+            aN=0.0; aE=0.0   # orient yoluyla doldurulur (burada veri yok)
+        else:
+            aN=c*ax[k]-s*ay[k]; aE=s*ax[k]+c*ay[k]
+        # bias nav-cerceve [bN,bE] -> A SABIT
         A=np.array([
-            [1,0,d,0,-0.5*d*d*c, 0.5*d*d*s],
-            [0,1,0,d,-0.5*d*d*s,-0.5*d*d*c],
-            [0,0,1,0,-d*c, d*s],
-            [0,0,0,1,-d*s,-d*c],
+            [1,0,d,0,-0.5*d*d,0],
+            [0,1,0,d,0,-0.5*d*d],
+            [0,0,1,0,-d,0],
+            [0,0,0,1,0,-d],
             [0,0,0,0,1,0],
             [0,0,0,0,0,1.]])
-        aN=c*ax[k]-s*ay[k]; aE=s*ax[k]+c*ay[k]
         Bu=np.array([0.5*d*d*aN,0.5*d*d*aE,d*aN,d*aE,0,0.])
         x=A@x+Bu
         qp=0.25*d**4*sigma_a**2; qv=d*d*sigma_a**2; qb=d*sigma_bias**2
@@ -85,21 +108,24 @@ def fusionEKF():
         while gps_idx<ngps and tg[gps_idx]<=t[k]+1e-9:
             h=hacc[gps_idx]
             if not (0<h<50): gps_idx+=1; continue
+            if (t[k]-last_gps_t) > 3.0:   # outage donusu -> kovaryansi sis
+                P[0,0]+=2500; P[1,1]+=2500; P[2,2]+=25; P[3,3]+=25
             zc=np.array([gN[gps_idx],gE[gps_idx]])
             x,P=ekf_update(x,P,zc,Hc,np.diag([h*h,h*h]),1e18)
             if not math.isnan(vN_g[gps_idx]):
                 zv=np.array([vN_g[gps_idx],vE_g[gps_idx]])
                 x,P=ekf_update(x,P,zv,Hv,np.diag([0.09,0.09]),1e18)
-                if not math.isnan(spd[gps_idx]) and spd[gps_idx]>2:
+                if (not HAS_ORIENT) and not math.isnan(spd[gps_idx]) and spd[gps_idx]>2:
                     pg=math.atan2(vE_g[gps_idx],vN_g[gps_idx])
                     psi+=Kpsi*math.atan2(math.sin(pg-psi),math.cos(pg-psi))
+            last_gps_t=t[k]
             gps_idx+=1
         ah=math.hypot(ax[k],ay[k]); sp_e=math.hypot(x[2],x[3])
-        if ah<a_zupt and abs(gz[k])<0.05 and sp_e<v_zupt:
+        if (not outage) and ah<a_zupt and abs(gz[k])<0.05 and sp_e<v_zupt:
             x,P=ekf_update(x,P,np.array([0,0.]),Hv,np.diag([0.0025,0.0025]),1e18)
         out_n[k]=x[0]; out_e[k]=x[1]; out_v[k]=math.hypot(x[2],x[3])
-        out_bax[k]=x[4]; out_bay[k]=x[5]
-    return out_n,out_e,out_v,out_bax,out_bay
+        out_bN[k]=x[4]; out_bE[k]=x[5]
+    return out_n,out_e,out_v,out_bN,out_bE
 
 def butter2(x,fc=5.0):
     fs=1/dt; g=math.tan(math.pi*fc/fs); D=g*g+math.sqrt(2)*g+1
