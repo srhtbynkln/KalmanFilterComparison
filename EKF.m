@@ -17,7 +17,10 @@ function out = EKF(ds)
     prev_gps = [];
 
     for k = 1:N
-        a_res = sqrt(ds.ax(k)^2 + ds.ay(k)^2 + (ds.az(k)-9.81)^2);
+        % Yercekimi sadece ham IMU verisinde (modena) cikarilir; telefon verisi
+        % zaten lineer (yercekimsiz) oldugundan cikarilmaz.
+        if ds.gravity_present, az_lin = ds.az(k) - 9.81; else, az_lin = ds.az(k); end
+        a_res = sqrt(ds.ax(k)^2 + ds.ay(k)^2 + az_lin^2);
         dot_p = ds.ax(k)*cos(x(4)) + ds.ay(k)*sin(x(4));
         if dot_p < 0, a_res = -a_res; end
         

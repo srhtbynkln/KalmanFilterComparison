@@ -63,9 +63,9 @@ function kf_out = KF(ds)
     end
     
     % Birim dönüşüm katsayıları
-    scale_acc = 1.0; 
+    % NOT: ivme zaten m/s^2 (telefon=lineer, modena=ham). g->m/s^2 olceklemesi YAPILMAZ.
+    scale_acc = 1.0;
     scale_gyro = 1.0;
-    if mean(abs(ds.az)) < 2.0, scale_acc = 9.80665; end
     if mean(abs(ds.gz)) > 10, scale_gyro = pi/180; end
 
     % --- LİNEER KF DÖNGÜSÜ ---
