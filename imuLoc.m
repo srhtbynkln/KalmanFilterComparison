@@ -32,11 +32,15 @@ function imu_out = imuLoc(ds)
     a = [1, 2*(g^2-1)/D, (g^2 - sqrt(2)*g + 1)/D];
     ax_f = filt2(ds.ax, b, a);
     ay_f = filt2(ds.ay, b, a);
+    az_f = filt2(ds.az, b, a);
 
-    % --- Bias kestirimi: ilk 2 sn (veya duragan goründügü) pencereden ortalama ---
+    useOri = isfield(ds,'has_orientation') && ds.has_orientation;
+
+    % --- Bias kestirimi: ilk 2 sn (duragan) pencereden ortalama ---
     win = min(N, max(50, round(2/dt)));
     bax = mean(ax_f(1:win));
     bay = mean(ay_f(1:win));
+    baz = mean(az_f(1:win));
 
     % --- Baslangic yonelimi ve hizi (GPS'ten) ---
     psi = init_heading(ds);
@@ -52,13 +56,20 @@ function imu_out = imuLoc(ds)
 
         ax = ax_f(k) - bax;     % bias cikar
         ay = ay_f(k) - bay;
+        az = az_f(k) - baz;
 
         % ZUPT: duruyorsa hizi sifirla
         if sqrt(ax^2+ay^2) < a_zupt && abs(ds.gz(k)) < 0.05
             vN = 0; vE = 0;
         else
-            aN = ax*cos(psi) - ay*sin(psi);
-            aE = ax*sin(psi) + ay*cos(psi);
+            if useOri
+                aw = quatRotate([ds.qw(k) ds.qx(k) ds.qy(k) ds.qz(k)], [ax; ay; az]);
+                if ds.gravity_present, aw(3) = aw(3) - 9.81; end
+                aE = aw(1);  aN = aw(2);
+            else
+                aN = ax*cos(psi) - ay*sin(psi);
+                aE = ax*sin(psi) + ay*cos(psi);
+            end
             pN = pN + vN*dt + 0.5*aN*dt^2;
             pE = pE + vE*dt + 0.5*aE*dt^2;
             vN = vN + aN*dt;
@@ -80,6 +91,16 @@ function y = filt2(x, b, a)
     for i = 3:N
         y(i) = b(1)*x(i) + b(2)*x(i-1) + b(3)*x(i-2) - a(2)*y(i-1) - a(3)*y(i-2);
     end
+end
+
+function v = quatRotate(q, u)
+    % q = [w x y z], govde->dunya (ENU) rotasyonu; v = R(q)*u
+    w=q(1); x=q(2); y=q(3); z=q(4);
+    n = sqrt(w*w+x*x+y*y+z*z);  if n>0, w=w/n; x=x/n; y=y/n; z=z/n; end
+    R = [ 1-2*(y^2+z^2),  2*(x*y-z*w),    2*(x*z+y*w) ;
+          2*(x*y+z*w),    1-2*(x^2+z^2),  2*(y*z-x*w) ;
+          2*(x*z-y*w),    2*(y*z+x*w),    1-2*(x^2+y^2) ];
+    v = R*u;
 end
 
 function psi0 = init_heading(ds)

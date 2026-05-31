@@ -43,6 +43,32 @@ function [ds, T0] = loadAndSyncSensors(dataDir)
         ds.gz = interp1(tg_imu, gyr.z, ds.time, 'linear', 'extrap');
         ds.gyr_z = ds.gz;
 
+        % --- Orientation / Rotation Vector (VARSA) -> tam 3B rotasyon ---
+        orient_file = '';
+        for cand = {'Orientation.csv','RotationVector.csv','Orientation_quat.csv'}
+            f = fullfile(dataDir, cand{1});
+            if exist(f, 'file'), orient_file = f; break; end
+        end
+        if ~isempty(orient_file)
+            ori = readtable(orient_file);
+            ocols = ori.Properties.VariableNames;
+            qn = {'qw','qx','qy','qz'};
+            if all(ismember(qn, ocols))
+                to = ori.seconds_elapsed;
+                ds.qw = interp1(to, ori.qw, ds.time, 'linear', 'extrap');
+                ds.qx = interp1(to, ori.qx, ds.time, 'linear', 'extrap');
+                ds.qy = interp1(to, ori.qy, ds.time, 'linear', 'extrap');
+                ds.qz = interp1(to, ori.qz, ds.time, 'linear', 'extrap');
+                ds.has_orientation = true;
+                fprintf('Orientation bulundu (%s) -> tam 3B rotasyon\n', orient_file);
+            else
+                ds.has_orientation = false;
+                disp('Orientation dosyasi var ama qw/qx/qy/qz sutunlari yok -> yaw-only');
+            end
+        else
+            ds.has_orientation = false;
+        end
+
         % --- GNSS ---
         ds.gps.time = loc.seconds_elapsed;
         ds.gps.lat  = loc.latitude;
@@ -114,6 +140,9 @@ function [ds, T0] = loadAndSyncSensors(dataDir)
         ds.gps.vE = findColumnData(raw_gnss, {'velE'});
         ds.gps.speedAcc = findColumnData(raw_gnss, {'speedAcc'});
     end
+
+    % Orientation yoksa varsayilan (modena vb.)
+    if ~isfield(ds, 'has_orientation'), ds.has_orientation = false; end
 
     % hAcc guvenligi
     if all(ds.gps.hacc == 0) || all(isnan(ds.gps.hacc))
