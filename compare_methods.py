@@ -129,6 +129,9 @@ fN, fE = fusion()
 
 # ---------------- METRIKLER (referans = iyi GPS noktalari) ----------------
 good = (hacc < HACC_OK) & ~np.isnan(gN)
+if not good.any():
+    print(f"Gecerli GPS noktasi yok (hAcc<{HACC_OK:.0f} m kosulunu saglayan fix yok): {d}")
+    print("Metrik uretilemez; daha temiz GPS'li bir oturum gerekir."); sys.exit(0)
 def metrics(name, on, oe):
     pn = np.interp(tg, t, on); pe = np.interp(tg, t, oe)
     err = np.hypot(pn[good]-gN[good], pe[good]-gE[good])
