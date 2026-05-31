@@ -17,3 +17,8 @@ imu_predictions.csv
 *\ 2/
 *\ 2.*
 * [0-9].csv
+
+# IDE/OS
+.DS_Store
+# Ayri nested proje (kendi git/build artifactleri var)
+KalmanLogger/
