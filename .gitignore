@@ -22,3 +22,6 @@ imu_predictions.csv
 .DS_Store
 # Ayri nested proje (kendi git/build artifactleri var)
 KalmanLogger/
+
+# graphify (makine-yerel bilgi grafigi ciktisi)
+graphify-out/
